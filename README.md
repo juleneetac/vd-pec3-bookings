@@ -22,10 +22,10 @@ Julen
 
 ## Ejecución en RStudio
 
-**Run**
+**Run**  
 Run --> Restart R and Run all Chunks
 
-**HTML output**
+**HTML output**  
 Knit --> Knit to HTML
 
 
