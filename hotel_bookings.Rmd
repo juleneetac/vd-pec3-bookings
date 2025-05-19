@@ -29,6 +29,7 @@ library("MASS")
 library("survival")
 library("ggstatsplot")
 library("tidyverse")
+library("countrycode")
 ```
 
 ## Data loading and dimensions (N x M)
@@ -855,8 +856,118 @@ Delete unnecessary columns to reduce dataset size:
 
 ```{r reduce_dataset}
 
-x_reduced <- x %>% select(-company, -agent, -reserved_room_type, -assigned_room_type, -market_segment, -distribution_channel, -arrival_date_week_number, -customer_type)
+x_reduced <- x %>% select(-company, -agent, -reserved_room_type, -assigned_room_type, -market_segment, -distribution_channel, -arrival_date_week_number, -customer_type, -reservation_status)
 
-write.csv(x_reduced, "x_reduced.csv", row.names = FALSE, quote = TRUE)
+#write.csv(x_reduced, "x_reduced.csv", row.names = FALSE, quote = TRUE)
+
+```
+
+```{r reduce2_dataset}
+
+x_reduced2 <- x_reduced %>% select(country, is_canceled, dia, hotel, adults, children, babies)
+
+
+#write.csv(x_reduced2, "x_reduced2.csv", row.names = FALSE, quote = TRUE)
+
+```
+
+```{r reduce3_dataset}
+
+#ANIMATED HANS ROSLING SCATTER PLOT
+
+# Quitar el país de portugal
+x_reduced2 <- x_reduced2 %>%
+  filter(country != "PRT")
+
+# Cambiar todas las filas con CN por CHN
+x_reduced2 <- x_reduced2 %>%
+  mutate(country = if_else(country == "CN", "CHN", country))
+
+x_reduced2 <- x_reduced2 %>%
+  mutate(
+    dia = as.Date(dia),
+    mes = floor_date(dia, "month"),
+    is_canceled = as.numeric(as.character(is_canceled)),  # convierte a 0 o 1 reales
+    total_people = adults + children + babies
+  ) %>%
+  group_by(country) %>%  # Quitar países con 0 cancelaciones en total
+  filter(sum(is_canceled) > 0) %>%
+  ungroup()
+
+# Agrupar por país y día, y calcular totales por mes
+df_acumulado <- x_reduced2 %>%
+  group_by(country, mes) %>%
+  summarise(
+    cancelaciones_mensuales = sum(is_canceled),
+    personas_mensuales = sum(total_people),
+    reservas_mensuales = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(country, mes) %>%
+  group_by(country) %>%
+  mutate(
+    cancelaciones_acumuladas = as.numeric(cumsum(cancelaciones_mensuales)),
+    personas_acumuladas = as.numeric(cumsum(personas_mensuales)),
+    reservas_acumuladas = as.numeric(cumsum(reservas_mensuales)),
+    ratio_cancelaciones = round(100 * (cancelaciones_acumuladas / reservas_acumuladas), 1)
+  ) %>%
+  ungroup()
+
+# Añadir región de cada país (continente) 
+df_acumulado <- df_acumulado %>%
+  mutate(
+    region = countrycode(country, origin = "iso3c", destination = "region")
+  )
+
+# Transformar los valores de las regiones
+# Pacific sería oceania pero se ha metido dentro de Asia
+df_acumulado <- df_acumulado %>%
+  mutate(region = case_when(
+    region %in% c("North America", "Latin America & Caribbean") ~ "Americas",
+    region %in% c("South Asia", "East Asia & Pacific") ~ "Asia",
+    region %in% c("Sub-Saharan Africa", "Middle East & North Africa") ~ "Africa",
+    region == "Europe & Central Asia" ~ "Europe",
+    TRUE ~ "Other"
+  ))
+
+# Añadir nombre del país
+df_acumulado <- df_acumulado %>%
+  mutate(
+    country_name = countrycode(country, origin = "iso3c", destination = "country.name"),
+    country_name = replace_na(country_name, "Other")
+    )
+
+# Ordenar por fecha
+df_acumulado <- df_acumulado %>%  
+  arrange(mes)
+
+# Agrupar por país y día, y calcular totales por dia
+# df_acumulado2 <- x_reduced2 %>%
+#   group_by(country, dia) %>%
+#   summarise(
+#     daily_cancel = sum(is_canceled),
+#     daily_people = sum(total_people),
+#     daily_reservas = n(),
+#     .groups = "drop"
+#   ) %>%
+#   arrange(country, dia) %>%
+#   group_by(country) %>%
+#   mutate(
+#     cancel_acum = cumsum(daily_cancel),
+#     people_acum = cumsum(daily_people),
+#     reservas_acum = cumsum(daily_reservas)
+#   ) %>%
+#   ungroup()
+# 
+# df_acumulado2 <- df_acumulado2 %>%
+#   arrange(dia)
+
+write.csv(df_acumulado, "x_reduced2.csv", row.names = FALSE, quote = TRUE)
+
+```
+
+```{r df_acumulado_resumen}
+
+str(df_acumulado)
 
 ```
